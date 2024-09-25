@@ -19,7 +19,7 @@ import (
 
 	"github.com/bluesky-social/indigo/atproto/crypto"
 
-	"github.com/uabluerail/indexer/util/plc"
+	"bsky.watch/plc-mirror/util/plc"
 )
 
 type Server struct {

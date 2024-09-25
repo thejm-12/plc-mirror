@@ -12,11 +12,12 @@ import (
 	"time"
 
 	"github.com/rs/zerolog"
-	"github.com/uabluerail/indexer/models"
-	"github.com/uabluerail/indexer/util/plc"
 	"golang.org/x/time/rate"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
+
+	"bsky.watch/plc-mirror/models"
+	"bsky.watch/plc-mirror/util/plc"
 )
 
 type PLCLogEntry struct {

@@ -25,7 +25,7 @@ import (
 	"gorm.io/gorm"
 	"gorm.io/gorm/logger"
 
-	"github.com/uabluerail/indexer/util/gormzerolog"
+	"bsky.watch/plc-mirror/util/gormzerolog"
 )
 
 type Config struct {
