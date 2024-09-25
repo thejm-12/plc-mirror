@@ -1,11 +1,6 @@
 services:
   postgres:
-    # image: "postgres:16"
-    build:
-      context: ./docker
-      dockerfile_inline: |
-        FROM postgres:16
-        RUN apt update && apt install -y postgresql-16-partman
+    image: "postgres:16"
     volumes:
       - "${DATA_DIR:?specify data dir in .env file}/postgres:/var/lib/postgresql/data:rw"
     restart: always
@@ -21,36 +16,7 @@ services:
     environment:
       POSTGRES_DB: bluesky
       POSTGRES_PASSWORD: "${POSTGRES_PASSWORD:?specify password in .env file}"
-    command: [
-      "-c", "max_connections=1000",
-      "-c", "shared_buffers=8GB",
-      "-c", "work_mem=2GB",
-      "-c", "max_parallel_workers_per_gather=8",
-      "-c", "max_wal_size=8GB",
-      "-c", "shared_preload_libraries=pg_partman_bgw",
-      "-c", "pg_partman_bgw.interval=3600",
-      "-c", "pg_partman_bgw.role=postgres",
-      "-c", "pg_partman_bgw.dbname=bluesky",
-    ]
-    shm_size: '16gb'
     stop_grace_period: 24h
-
-  update-db-schema:
-    build:
-      context: .
-      dockerfile: cmd/update-db-schema/Dockerfile
-    extra_hosts:
-      - "host.docker.internal:host-gateway"
-    restart: on-failure
-    image: uabluerail/update-db-schema
-    links:
-      - postgres:db
-    depends_on:
-      postgres:
-        condition: service_healthy
-    environment:
-      UPDATE-DB-SCHEMA_POSTGRES_URL: "postgres://postgres:${POSTGRES_PASSWORD}@db/bluesky?sslmode=disable"
-    command: [ "--log-level=0" ]
 
   plc:
     build:
@@ -69,133 +35,16 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
-      update-db-schema:
-        condition: service_completed_successfully
     environment:
       PLC_METRICS_PORT: '8080'
       PLC_POSTGRES_URL: "postgres://postgres:${POSTGRES_PASSWORD}@db/bluesky?sslmode=disable"
     ports:
-      - "${METRICS_ADDR:-0.0.0.0}:11004:8080"
+      - "0.0.0.0:11004:8080"
     command: [ "--log-level=0" ]
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8080/ready"]
       interval: 30s
       timeout: 5s
       retries: 30
-      start_period: 6h
+      start_period: 12h
       start_interval: 15s
-
-  lister:
-    build:
-      context: .
-      dockerfile: cmd/lister/Dockerfile
-    extra_hosts:
-      - "host.docker.internal:host-gateway"
-    restart: always
-    image: uabluerail/repo-lister
-    deploy:
-      resources:
-        limits:
-          memory: 1G
-    links:
-      - postgres:db
-      - plc:plc
-    depends_on:
-      postgres:
-        condition: service_healthy
-      plc:
-        condition: service_healthy
-      update-db-schema:
-        condition: service_completed_successfully
-    environment:
-      LISTER_METRICS_PORT: '8080'
-      LISTER_POSTGRES_URL: "postgres://postgres:${POSTGRES_PASSWORD}@db/bluesky?sslmode=disable"
-      ATP_PLC_ADDR: "http://plc:8080"
-    ports:
-      - "${METRICS_ADDR:-0.0.0.0}:11001:8080"
-    command: [ "--log-level=0" ]
-  consumer:
-    build:
-      context: .
-      dockerfile: cmd/consumer/Dockerfile
-    extra_hosts:
-      - "host.docker.internal:host-gateway"
-    restart: always
-    image: uabluerail/firehose-consumer
-    deploy:
-      resources:
-        limits:
-          memory: 1G
-    links:
-      - postgres:db
-      - plc:plc
-    depends_on:
-      postgres:
-        condition: service_healthy
-      plc:
-        condition: service_healthy
-      update-db-schema:
-        condition: service_completed_successfully
-    environment:
-      CONSUMER_METRICS_PORT: '8080'
-      CONSUMER_POSTGRES_URL: "postgres://postgres:${POSTGRES_PASSWORD}@db/bluesky?sslmode=disable"
-      # CONSUMER_RELAYS: "https://bsky.network"  # Effectively doubles inbound network traffic. Set this in docker-compose.override.yml if needed.
-      ATP_PLC_ADDR: "http://plc:8080"
-    ports:
-      - "${METRICS_ADDR:-0.0.0.0}:11002:8080"
-    command: [ "--log-level=0" ]
-
-  record-indexer:
-    build:
-      context: .
-      dockerfile: cmd/record-indexer/Dockerfile
-    extra_hosts:
-      - "host.docker.internal:host-gateway"
-    restart: always
-    image: uabluerail/record-indexer
-    deploy:
-      resources:
-        limits:
-          memory: 4G
-    links:
-      - postgres:db
-      - plc:plc
-    depends_on:
-      postgres:
-        condition: service_healthy
-      plc:
-        condition: service_healthy
-      update-db-schema:
-        condition: service_completed_successfully
-    dns:
-      - 1.1.1.1
-      - 8.8.8.8
-    environment:
-      INDEXER_METRICS_PORT: '8080'
-      INDEXER_POSTGRES_URL: "postgres://postgres:${POSTGRES_PASSWORD}@db/bluesky?sslmode=disable"
-      INDEXER_WORKERS: 50
-      ATP_PLC_ADDR: "http://plc:8080"
-    ports:
-      - "${METRICS_ADDR:-0.0.0.0}:11003:8080"
-    command: [ "--log-level=0" ]
-
-  query-exporter:
-    image: adonato/query-exporter:latest
-    environment:
-      POSTGRES_URL: "postgres://postgres:${POSTGRES_PASSWORD}@postgres:5432/bluesky?sslmode=disable"
-    volumes:
-      - "./metrics/prometheus/exporters/query-exporter/config.yaml:/config.yaml"
-    extra_hosts:
-      - "host.docker.internal:host-gateway"
-    ports:
-      - "${METRICS_ADDR:-0.0.0.0}:9560:9560"
-    links:
-      - postgres:postgres
-    depends_on:
-      postgres:
-        condition: service_healthy
-      update-db-schema:
-        # Not a strict dependency, but it's better to not have it running
-        # unnecessary queries during a costly migration.
-        condition: service_completed_successfully
-
