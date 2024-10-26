@@ -64,8 +64,15 @@ func (s *Server) Ready(w http.ResponseWriter, req *http.Request) {
 }
 
 func (s *Server) serve(ctx context.Context, req *http.Request) convreq.HttpResponse {
+	start := time.Now()
+	updateMetrics := func(c int) {
+		requestCount.WithLabelValues(fmt.Sprint(c)).Inc()
+		requestLatency.WithLabelValues(fmt.Sprint(c)).Observe(float64(time.Now().Sub(start).Milliseconds()))
+	}
+
 	delay := time.Since(s.mirror.LastSuccess())
 	if delay > s.MaxDelay {
+		updateMetrics(http.StatusServiceUnavailable)
 		return respond.ServiceUnavailable(fmt.Sprintf("mirror is %s behind", delay))
 	}
 	log := zerolog.Ctx(ctx)
@@ -74,14 +81,17 @@ func (s *Server) serve(ctx context.Context, req *http.Request) convreq.HttpRespo
 	var entry PLCLogEntry
 	err := s.db.Model(&entry).Where("did = ? AND (NOT nullified)", requestedDid).Order("plc_timestamp desc").Limit(1).Take(&entry).Error
 	if errors.Is(err, gorm.ErrRecordNotFound) {
+		updateMetrics(http.StatusNotFound)
 		return respond.NotFound("unknown DID")
 	}
 	if err != nil {
 		log.Error().Err(err).Str("did", requestedDid).Msgf("Failed to get the last log entry for %q: %s", requestedDid, err)
+		updateMetrics(http.StatusInternalServerError)
 		return respond.InternalServerError("failed to get the last log entry")
 	}
 
 	if _, ok := entry.Operation.Value.(plc.Tombstone); ok {
+		updateMetrics(http.StatusNotFound)
 		return respond.NotFound("DID deleted")
 	}
 
@@ -139,7 +149,7 @@ func (s *Server) serve(ctx context.Context, req *http.Request) convreq.HttpRespo
 			}
 		}
 	}
-
+	updateMetrics(http.StatusOK)
 	return respond.JSON(r)
 }
 

@@ -149,7 +149,15 @@ func (m *Mirror) runOnce(ctx context.Context) error {
 			}
 
 			cursor = entry.CreatedAt
-			newEntries = append(newEntries, *FromOperationLogEntry(entry))
+			row := *FromOperationLogEntry(entry)
+			newEntries = append(newEntries, row)
+
+			t, err := time.Parse(time.RFC3339, row.PLCTimestamp)
+			if err == nil {
+				lastEventTimestamp.Set(float64(t.Unix()))
+			} else {
+				log.Warn().Msgf("Failed to parse %q: %s", row.PLCTimestamp, err)
+			}
 		}
 
 		if len(newEntries) == 0 || cursor == oldCursor {
