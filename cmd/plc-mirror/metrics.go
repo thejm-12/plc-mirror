@@ -18,5 +18,5 @@ var requestCount = promauto.NewCounterVec(prometheus.CounterOpts{
 var requestLatency = promauto.NewHistogramVec(prometheus.HistogramOpts{
 	Name:    "plcmirror_response_latency_millisecond",
 	Help:    "Latency of responses.",
-	Buckets: prometheus.ExponentialBucketsRange(1, 30000, 20),
+	Buckets: prometheus.ExponentialBucketsRange(0.1, 30000, 20),
 }, []string{"status"})
