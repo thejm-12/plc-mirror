@@ -67,7 +67,7 @@ func (s *Server) serve(ctx context.Context, req *http.Request) convreq.HttpRespo
 	start := time.Now()
 	updateMetrics := func(c int) {
 		requestCount.WithLabelValues(fmt.Sprint(c)).Inc()
-		requestLatency.WithLabelValues(fmt.Sprint(c)).Observe(float64(time.Now().Sub(start).Milliseconds()))
+		requestLatency.WithLabelValues(fmt.Sprint(c)).Observe(float64(time.Now().Sub(start)) / float64(time.Millisecond))
 	}
 
 	delay := time.Since(s.mirror.LastSuccess())
