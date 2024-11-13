@@ -51,11 +51,7 @@ func (s *Server) Ready(w http.ResponseWriter, req *http.Request) {
 		if err != nil {
 			return respond.InternalServerError(err.Error())
 		}
-		t, err := time.Parse(time.RFC3339, ts)
-		if err != nil {
-			return respond.InternalServerError(err.Error())
-		}
-		delay := time.Since(t)
+		delay := time.Since(ts)
 		if delay > s.MaxDelay {
 			return respond.ServiceUnavailable(fmt.Sprintf("still %s behind", delay))
 		}
