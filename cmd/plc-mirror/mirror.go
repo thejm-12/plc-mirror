@@ -201,11 +201,12 @@ func (m *Mirror) runOnce(ctx context.Context) error {
 			return fmt.Errorf("inserting log entry into database: %w", err)
 		}
 
+		m.mu.Lock()
+		m.lastSuccessTimestamp = time.Now()
 		if !lastTimestamp.IsZero() {
-			m.mu.Lock()
 			m.lastRecordTimestamp = lastTimestamp
-			m.mu.Unlock()
 		}
+		m.mu.Unlock()
 
 		log.Info().Msgf("Got %d log entries. New cursor: %q", len(newEntries), cursor)
 	}
