@@ -112,11 +112,11 @@ func (m *Mirror) LastRecordTimestamp(ctx context.Context) (time.Time, error) {
 
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	if t.IsZero() {
-		t = dbTimestamp
+	if m.lastRecordTimestamp.IsZero() {
+		m.lastRecordTimestamp = dbTimestamp
 	}
-	if t.After(dbTimestamp) {
-		return t, nil
+	if m.lastRecordTimestamp.After(dbTimestamp) {
+		return m.lastRecordTimestamp, nil
 	}
 	return dbTimestamp, nil
 }
