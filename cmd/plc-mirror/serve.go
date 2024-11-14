@@ -66,14 +66,21 @@ func (s *Server) serve(ctx context.Context, req *http.Request) convreq.HttpRespo
 		requestLatency.WithLabelValues(fmt.Sprint(c)).Observe(float64(time.Now().Sub(start)) / float64(time.Millisecond))
 	}
 
+	// Check if the mirror is up to date.
 	ts, err := s.mirror.LastRecordTimestamp(ctx)
 	if err != nil {
 		return respond.InternalServerError(err.Error())
 	}
 	delay := time.Since(ts)
 	if delay > s.MaxDelay {
-		updateMetrics(http.StatusServiceUnavailable)
-		return respond.ServiceUnavailable(fmt.Sprintf("mirror is %s behind", delay))
+		// Check LastCompletion and if it's recent enough - that means
+		// that we're actually caught up and there simply aren't any recent
+		// PLC operations.
+		completionDelay := time.Since(s.mirror.LastCompletion())
+		if completionDelay > s.MaxDelay {
+			updateMetrics(http.StatusServiceUnavailable)
+			return respond.ServiceUnavailable(fmt.Sprintf("mirror is %s behind", delay))
+		}
 	}
 	log := zerolog.Ctx(ctx)
 
