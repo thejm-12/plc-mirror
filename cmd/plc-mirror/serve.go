@@ -66,7 +66,11 @@ func (s *Server) serve(ctx context.Context, req *http.Request) convreq.HttpRespo
 		requestLatency.WithLabelValues(fmt.Sprint(c)).Observe(float64(time.Now().Sub(start)) / float64(time.Millisecond))
 	}
 
-	delay := time.Since(s.mirror.LastSuccess())
+	ts, err := s.mirror.LastRecordTimestamp(ctx)
+	if err != nil {
+		return respond.InternalServerError(err.Error())
+	}
+	delay := time.Since(ts)
 	if delay > s.MaxDelay {
 		updateMetrics(http.StatusServiceUnavailable)
 		return respond.ServiceUnavailable(fmt.Sprintf("mirror is %s behind", delay))
@@ -75,7 +79,7 @@ func (s *Server) serve(ctx context.Context, req *http.Request) convreq.HttpRespo
 
 	requestedDid := strings.ToLower(strings.TrimPrefix(req.URL.Path, "/"))
 	var entry PLCLogEntry
-	err := s.db.Model(&entry).Where("did = ? AND (NOT nullified)", requestedDid).Order("plc_timestamp desc").Limit(1).Take(&entry).Error
+	err = s.db.Model(&entry).Where("did = ? AND (NOT nullified)", requestedDid).Order("plc_timestamp desc").Limit(1).Take(&entry).Error
 	if errors.Is(err, gorm.ErrRecordNotFound) {
 		updateMetrics(http.StatusNotFound)
 		return respond.NotFound("unknown DID")
