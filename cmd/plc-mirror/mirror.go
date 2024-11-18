@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"math"
 	"net/http"
 	"net/url"
 	"sync"
@@ -18,6 +19,13 @@ import (
 
 	"bsky.watch/plc-mirror/models"
 	"bsky.watch/plc-mirror/util/plc"
+)
+
+const (
+	// Current rate limit is `500 per five minutes`, lets stay a bit under it.
+	defaultRateLimit  = rate.Limit(450.0 / 300)
+	caughtUpRateLimit = rate.Limit(0.2)
+	caughtUpThreshold = 10 * time.Minute
 )
 
 type PLCLogEntry struct {
@@ -53,8 +61,7 @@ func NewMirror(ctx context.Context, upstream string, db *gorm.DB) (*Mirror, erro
 	return &Mirror{
 		db:       db,
 		upstream: u,
-		// Current rate limit is `500 per five minutes`, lets stay a bit under it.
-		limiter: rate.NewLimiter(rate.Limit(450.0/300), 4),
+		limiter:  rate.NewLimiter(defaultRateLimit, 4),
 	}, nil
 }
 
@@ -128,6 +135,20 @@ func (m *Mirror) runOnce(ctx context.Context) error {
 	err := m.db.Model(&PLCLogEntry{}).Select("plc_timestamp").Order("plc_timestamp desc").Limit(1).Take(&cursor).Error
 	if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
 		return fmt.Errorf("failed to get the cursor: %w", err)
+	}
+
+	cursorTimestamp, err := time.Parse(time.RFC3339, cursor)
+	if err != nil {
+		log.Error().Err(err).Msgf("parsing timestamp %q: %s", cursor, err)
+	} else {
+		// Reduce rate limit if we are caught up, to get new records in larger batches.
+		desiredRate := defaultRateLimit
+		if time.Since(cursorTimestamp) < caughtUpThreshold {
+			desiredRate = caughtUpRateLimit
+		}
+		if math.Abs(float64(m.limiter.Limit()-desiredRate)) > 0.0000001 {
+			m.limiter.SetLimit(rate.Limit(desiredRate))
+		}
 	}
 
 	u := *m.upstream
