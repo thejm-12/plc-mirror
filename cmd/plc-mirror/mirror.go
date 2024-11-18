@@ -128,6 +128,17 @@ func (m *Mirror) LastRecordTimestamp(ctx context.Context) (time.Time, error) {
 	return dbTimestamp, nil
 }
 
+func (m *Mirror) updateRateLimit(lastRecordTimestamp time.Time) {
+	// Reduce rate limit if we are caught up, to get new records in larger batches.
+	desiredRate := defaultRateLimit
+	if time.Since(lastRecordTimestamp) < caughtUpThreshold {
+		desiredRate = caughtUpRateLimit
+	}
+	if math.Abs(float64(m.limiter.Limit()-desiredRate)) > 0.0000001 {
+		m.limiter.SetLimit(rate.Limit(desiredRate))
+	}
+}
+
 func (m *Mirror) runOnce(ctx context.Context) error {
 	log := zerolog.Ctx(ctx)
 
@@ -141,14 +152,7 @@ func (m *Mirror) runOnce(ctx context.Context) error {
 	if err != nil {
 		log.Error().Err(err).Msgf("parsing timestamp %q: %s", cursor, err)
 	} else {
-		// Reduce rate limit if we are caught up, to get new records in larger batches.
-		desiredRate := defaultRateLimit
-		if time.Since(cursorTimestamp) < caughtUpThreshold {
-			desiredRate = caughtUpRateLimit
-		}
-		if math.Abs(float64(m.limiter.Limit()-desiredRate)) > 0.0000001 {
-			m.limiter.SetLimit(rate.Limit(desiredRate))
-		}
+		m.updateRateLimit(cursorTimestamp)
 	}
 
 	u := *m.upstream
@@ -226,6 +230,8 @@ func (m *Mirror) runOnce(ctx context.Context) error {
 			m.mu.Lock()
 			m.lastRecordTimestamp = lastTimestamp
 			m.mu.Unlock()
+
+			m.updateRateLimit(lastTimestamp)
 		}
 
 		log.Info().Msgf("Got %d log entries. New cursor: %q", len(newEntries), cursor)
